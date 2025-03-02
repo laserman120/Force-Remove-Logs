@@ -24,6 +24,7 @@ using RedLoader.Utils;
 using System.Diagnostics.Tracing;
 using Microsoft.VisualBasic;
 using static SteamSocket;
+using SUI;
 
 namespace Force_Remove_Logs;
 
@@ -75,12 +76,12 @@ public class Force_Remove_Logs : SonsMod
         Force_Remove_LogsUi.Create();
 
         // Add in-game settings ui for your mod.
-        // SettingsRegistry.CreateSettings(this, null, typeof(Config));
+        SettingsRegistry.CreateSettings(this, null, typeof(Config));
     }
 
     void OnWorldExitedCallback()
     {
-        RLog.Msg("Returned to main menu... locking down mod...");
+        if (Config.ConsoleLogging.Value) { RLog.Msg("World Exited"); }
         forceDisableMod = true;
     }
 
@@ -89,8 +90,8 @@ public class Force_Remove_Logs : SonsMod
         // This is called once the player spawns in the world and gains control.
         if (BoltNetwork.isServerOrNotRunning)
         {
+            if (Config.ConsoleLogging.Value) { RLog.Msg("User is Server/Host/Singleplayer " + dismantleTimer); }
             forceDisableMod = false;
-            RLog.Msg("Enabled mod due to host or Singleplayer");
             //Initialize event handler
             EventHandler.Create();
             return;
@@ -98,22 +99,26 @@ public class Force_Remove_Logs : SonsMod
 
         if (forceDisableMod)
         {
+            if (Config.ConsoleLogging.Value) { RLog.Msg("Did not recieve mod version information.. grace period... " + dismantleTimer); }
             DelayedExecution().RunCoro();
         }
     }
 
     private static System.Collections.IEnumerator DelayedExecution()
-    { 
+    {
         yield return new WaitForSeconds(10f);
-
-        switch (disableReason)
+        if (forceDisableMod)
         {
-            case "mismatchVersion":
-                SonsTools.ShowMessage($"Force Remove Logs has been disabled due to mismatching mod version!", 30f);
-                break;
-            default:
-                SonsTools.ShowMessage($"Force Remove Logs has been disabled, mod not installed on server/host!", 30f);
-                break;
+            if (Config.ConsoleLogging.Value) { RLog.Msg("failed to recieve Packet. Mod Stays Disabled!"); }
+            switch (disableReason)
+            {
+                case "mismatchVersion":
+                    SonsTools.ShowMessage($"Force Remove Logs has been disabled due to mismatching mod version!", 30f);
+                    break;
+                default:
+                    SonsTools.ShowMessage($"Force Remove Logs has been disabled, mod not installed on server/host!", 30f);
+                    break;
+            }
         }
     }
 
@@ -125,13 +130,14 @@ public class Force_Remove_Logs : SonsMod
             return;
         }
 
-        if(_extractedGenericGrabberTargetProvider == null || _extractedState == null)
+        if(_extractedGenericGrabberTargetProvider == null || _extractedState == null || !isNonRemovable || _extractedTargetStructure == null)
         {
             stopAnimation();
+            startedDismantling = false;
+            dismantleTimer = 0;
             return;
         }
 
-        //DismantleHeld is released after the prompt dissapears i want to continue checking for if the button is kept held afterwards
         if (ConstructionInput.DismantleHeld()) //True as long as dismantling | Check for non removable | check if target is set
         {
             startedDismantling = true;
@@ -143,6 +149,7 @@ public class Force_Remove_Logs : SonsMod
 
         if (dismantleButtonUp)
         {
+            if (Config.ConsoleLogging.Value) { RLog.Msg("Dismantle button went up! " + dismantleTimer); }
             startedDismantling = false;
             dismantleTimer = 0;
             stopAnimation();
@@ -154,8 +161,8 @@ public class Force_Remove_Logs : SonsMod
             //Check if it cannot be normally remove and we already have a target structure
             if (isNonRemovable && _extractedTargetStructure != null)
             {
+                if (Config.ConsoleLogging.Value) { RLog.Msg("Dismantle in progress " + dismantleTimer); }
                 SetBuildMode(true);
-                RLog.Msg("Adding time... " + dismantleTimer + "  " + _extractedTargetStructure.gameObject.name);
                 dismantleTimer += Time.deltaTime;
                 // after half a second start the dismantle animation
                 if (dismantleTimer > 0.5f)
@@ -169,7 +176,6 @@ public class Force_Remove_Logs : SonsMod
                 //Animation done after ~ 0.5, remove object
                 if (dismantleTimer > forceRemovalTime)
                 {
-                    RLog.Msg("FORCE REMOVING TARGET OBJECT!!!");
                     dismantleTimer = 0;
                     startedDismantling = false;
                     stopAnimation();
@@ -177,6 +183,7 @@ public class Force_Remove_Logs : SonsMod
                     addItems();
                     //Run networking here
                     NetworkManager.SendStringMessage(_extractedTargetStructure.gameObject.name);
+                    if (Config.ConsoleLogging.Value) { RLog.Msg("Force Destroyed, sending packet "); }
                 }
             }
         } else {
@@ -271,7 +278,6 @@ public class Force_Remove_Logs : SonsMod
                 _extractedState = state;
                 int childCount = structure.ElementRoot.childCount;
                 _extractedTargetElement = structure.ElementRoot.GetChild(childCount - 1).GetComponent<StructureElement>();
-                if(_extractedTargetElement == null) { RLog.Msg("Failed to fetch element..."); }
 
                 _extractedConstructionManager = __instance.Manager;
                 _extractedGenericGrabberTargetProvider = __instance._grabberTargetProvider;
@@ -292,9 +298,9 @@ public class Force_Remove_Logs : SonsMod
     {
         if (!BoltNetwork.isServerOrNotRunning)
         {
-            RLog.Msg("User is not host, aborting mod version message send");
             return;
         }
+        if (Config.ConsoleLogging.Value) { RLog.Msg("Player Connected, sending version packet!"); }
         NetworkManager.SendJoiningMessage(_modVersion);
     }
 }
@@ -314,7 +320,6 @@ public class EventHandler : GlobalEventListener
 
     public override void Connected(BoltConnection connection)
     {
-        RLog.Msg("Player connected");
         Force_Remove_Logs.sendModVersion();
     }
 }
@@ -337,18 +342,13 @@ internal class StringMessageEvent : Packets.NetEvent
         GameObject TargetStructure = GameObject.Find(receivedString);
         if(TargetStructure != null)
         {
-            RLog.Msg("Found Target Structure! Destroyed!");
             GameObject.Destroy(TargetStructure);
-        } else
-        {
-            RLog.Msg("Unable to find Target Structure!");
-        } 
+        }
     }
 
     public override void Read(UdpPacket packet, BoltConnection fromConnection)
     {
         var receivedString = packet.ReadString();
-        RLog.Msg($"Received string: {receivedString}");
 
         HandleReceivedString(receivedString);
     }
@@ -372,17 +372,15 @@ internal class JoiningPlayerEvent : Packets.NetEvent
 
     private void HandleReceivedData(string receivedString)
     {
-        RLog.Msg("Recieved string in join event  " + receivedString);
 
         //No need to check if mod already enabled
-        if (Force_Remove_Logs.forceDisableMod)
+        if (!Force_Remove_Logs.forceDisableMod)
         {
             return;
         }
 
         if (receivedString != null && Force_Remove_Logs._modVersion == receivedString)
         {
-            RLog.Msg("Mod exists at host, version is equal, activating mod!");
             Force_Remove_Logs.forceDisableMod = false; 
         } else
         {
@@ -393,7 +391,6 @@ internal class JoiningPlayerEvent : Packets.NetEvent
     public override void Read(UdpPacket packet, BoltConnection _)
     {
         var receivedString = packet.ReadString();
-        RLog.Msg($"Received string: {receivedString}");
 
         HandleReceivedData(receivedString);
     }
@@ -410,7 +407,6 @@ internal class NetworkManager
         _joiningPlayerEvent = new JoiningPlayerEvent();
         Packets.Register(_stringMessageEvent);
         Packets.Register(_joiningPlayerEvent);
-
     }
 
     public static void SendStringMessage(string message, GlobalTargets target = GlobalTargets.Everyone)

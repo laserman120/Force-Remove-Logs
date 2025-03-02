@@ -1,9 +1,9 @@
 {
   "$schema": "https://raw.githubusercontent.com/ToniMacaroni/RedLoader/main/MetadataSchema.json",
   "id": "Force_Remove_Logs",
-  "author": "You",
-  "version": "1.0.0",
-  "description": "A mod that does something.",
+  "author": "GLaD0S",
+  "version": "1.0.1",
+  "description": "Allows logs to be forcably removed, even if not usually possible",
   "gameVersion": "1.0.0",
   "type": "Mod",
   "url": "..."
